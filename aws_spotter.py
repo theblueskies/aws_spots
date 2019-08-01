@@ -17,7 +17,7 @@ class AWSSpotScaler:
                  image_id='ami-0b898040803850657',
                  max_price=0.02,
                  IAM_fleet_role=''):
-        self.logger = logging.basicConfig(logging.BASIC_FORMAT)
+        self.logger = logging.basicConfig()
         try:
             self.client = boto3.client('ec2',region_name='us-east-1')
         except botocore.exceptions.ClientError as err:
