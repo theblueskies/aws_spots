@@ -11,25 +11,27 @@ class AWSSpotScaler:
     spot_scaler.run_spot_fleet_watcher()
     """
     def __init__(self,
-                 instance_type='m4.large',
+                 instance_types=['m4.large', 'm4.xlarge', 'm4.2xlarge']
                  image_id='ami-0b898040803850657',
                  max_price=0.02,
                  IAM_fleet_role=''):
         self.client = boto3.client('ec2',region_name='us-east-1')
-        self.instance_type = instance_type
+        self.instance_types = instance_types
         self.image_id = image_id
-        # Keeps track of spot instances
-        self.spot_request_id_map = {
-            'm4.large': []
-        }
-        # Keeps track of spot fleets
-        self.spot_fleet_id_map = {
-            'm4.large' = None
-        }
-        # Keeps track of current capacity
-        self.current_cap = {
-            'm4.large': 1
-        }
+
+        for instance in instance_types:
+            # Keeps track of spot instances
+            self.spot_request_id_map = {
+                instance: []
+            }
+            # Keeps track of spot fleets
+            self.spot_fleet_id_map = {
+                instance = None
+            }
+            # Keeps track of current capacity
+            self.current_cap = {
+                instance: 1
+            }
         self.max_cap = 5
         self.min_cap = 1
         self.max_price = max_price
@@ -52,24 +54,26 @@ class AWSSpotScaler:
         Note: It requests a spot fleet on the very first run.
         """
         while True:
-            price = self.get_price(self.instance_type)
-            # If this is the first time it's running, then request the spot fleet
-            if self.spot_fleet_id_map[self.instance_type] == None:
-                self.launch_spot_fleet()
+            for instance_type in self.instance_types:
+                price = self.get_price(instance_type)
+                # If this is the first time it's running, then request the spot fleet
+                if self.spot_fleet_id_map[instance_type] == None:
+                    self.launch_spot_fleet(instance_type)
+                    continue
 
-            # Check if the current price is less than our max price. If so, then increase spot fleet capacity
-            if price < self.max_price and self.current_cap[self.instance_type] <self.max_cap:
-                self.current_cap = self.max_cap
-                self.modify_spot_fleet(price,
-                                       target_capacity=self.max_cap,
-                                       spot_fleet_request_id=self.spot_fleet_id_map[self.instance_type])
+                # Check if the current price is less than our max price. If so, then increase spot fleet capacity
+                if price < self.max_price and self.current_cap[instance_type] <self.max_cap:
+                    self.current_cap = self.max_cap
+                    self.modify_spot_fleet(price,
+                                           target_capacity=self.max_cap,
+                                           spot_fleet_request_id=self.spot_fleet_id_map[instance_type])
 
-            # Else the current price is more than our max price and let's decrease the capacity of the spot instance fleet
-            else:
-                self.current_cap = self.min_cap
-                self.modify_spot_fleet(price,
-                                   target_capacity=self.min_cap,
-                                   spot_fleet_request_id=self.spot_fleet_id_map[self.instance_type])
+                # Else the current price is more than our max price and let's decrease the capacity of the spot instance fleet
+                else:
+                    self.current_cap = self.min_cap
+                    self.modify_spot_fleet(price,
+                                       target_capacity=self.min_cap,
+                                       spot_fleet_request_id=self.spot_fleet_id_map[instance_type])
 
         # Check every 10 minutes
         time.sleep(600)
@@ -79,22 +83,25 @@ class AWSSpotScaler:
 
         Spot fleet is better suited for that.
         """
-        price = self.get_price()
-        response = self.client.request_spot_instances(
-            DryRun=False,
-            SpotPrice = price,
-            Type = 'one-time',
-            BlockDurationMinutes=60,
-            InstanceCount=1,
-            LaunchSpecification = {
-                'ImageId': self.image_id,
-                'InstanceType': self.instance_type,
-            }
-        )
-        self.spot_request_id_map[self.instance_type].append(response['SpotInstanceRequests'][0]['SpotInstanceRequestId'])
-        return response
+        final_resp = []
+        for instance_type in self.instance_types:
+            price = self.get_price()
+            response = self.client.request_spot_instances(
+                DryRun=False,
+                SpotPrice = price,
+                Type = 'one-time',
+                BlockDurationMinutes=60,
+                InstanceCount=1,
+                LaunchSpecification = {
+                    'ImageId': self.image_id,
+                    'InstanceType': self.instance_type,
+                }
+            )
+            self.spot_request_id_map[self.instance_type].append(response['SpotInstanceRequests'][0]['SpotInstanceRequestId'])
+            final_resp.append(response)
+        return final_resp
 
-    def launch_spot_fleet(self):
+    def launch_spot_fleet(self, instance_type):
         """Launches a spot fleet with a set max capacity
         """
         if self.IAM_fleet_role:
@@ -107,14 +114,14 @@ class AWSSpotScaler:
                     'LaunchSpecifications': [
                         {
                             'ImageId': self.image_id,
-                            'InstanceType': self.instance_type,
+                            'InstanceType': instance_type,
                         },
                     ],
                     'SpotPrice': price,
                     'TargetCapacity': self.max_cap,
                 },
             )
-            self.spot_fleet_id_map[self.instance_type] = response['SpotFleetRequestId']
+            self.spot_fleet_id_map[instance_type] = response['SpotFleetRequestId']
             return response
 
     def modify_spot_fleet(self, price, target_capacity, spot_fleet_request_id):
