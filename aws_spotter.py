@@ -3,23 +3,32 @@ import time
 import boto3
 
 
-class AWSSpotter:
+class AWSSpotScaler:
+    """Keeps track of size of AWS Spot fleet and scales them up and down based on the max_price.
+
+    Example Usage:
+    spot_scaler = AWSSpotScaler(max_price='0.03', IAM_fleet_role="arn:aws:iam::123456789012:role/aws-ec2-spot-fleet-tagging-role")
+    spot_scaler.run_spot_fleet_watcher()
+    """
     def __init__(self,
-                 instance_type='t2.medium',
+                 instance_type='m4.large',
                  image_id='ami-0b898040803850657',
-                 max_price=0.002,
+                 max_price=0.02,
                  IAM_fleet_role=''):
         self.client = boto3.client('ec2',region_name='us-east-1')
         self.instance_type = instance_type
         self.image_id = image_id
+        # Keeps track of spot instances
         self.spot_request_id_map = {
-            't2.medium': []
+            'm4.large': []
         }
+        # Keeps track of spot fleets
         self.spot_fleet_id_map = {
-            't2.medium' = None
+            'm4.large' = None
         }
+        # Keeps track of current capacity
         self.current_cap = {
-            't2.medium': 1
+            'm4.large': 1
         }
         self.max_cap = 5
         self.min_cap = 1
@@ -37,7 +46,7 @@ class AWSSpotter:
         )
         return prices['SpotPriceHistory'][0]['SpotPrice']
 
-    def periodic_spot_fleet_watcher(self):
+    def run_spot_fleet_watcher(self):
         """Monitors and modifies the spot fleet every 10 minutes depending on the price
 
         Note: It requests a spot fleet on the very first run.
@@ -50,12 +59,15 @@ class AWSSpotter:
 
             # Check if the current price is less than our max price. If so, then increase spot fleet capacity
             if price < self.max_price and self.current_cap[self.instance_type] <self.max_cap:
+                self.current_cap = self.max_cap
                 self.modify_spot_fleet(price,
                                        target_capacity=self.max_cap,
                                        spot_fleet_request_id=self.spot_fleet_id_map[self.instance_type])
 
             # Else the current price is more than our max price and let's decrease the capacity of the spot instance fleet
-            self.modify_spot_fleet(price,
+            else:
+                self.current_cap = self.min_cap
+                self.modify_spot_fleet(price,
                                    target_capacity=self.min_cap,
                                    spot_fleet_request_id=self.spot_fleet_id_map[self.instance_type])
 
