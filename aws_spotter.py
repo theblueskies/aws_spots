@@ -13,11 +13,17 @@ class AWSSpotScaler:
     spot_scaler.run_spot_fleet_watcher()
     """
     def __init__(self,
-                 instance_types=['m4.large', 'm4.xlarge', 'm4.2xlarge']
+                 instance_types=['m4.large', 'm4.xlarge', 'm4.2xlarge'],
                  image_id='ami-0b898040803850657',
                  max_price=0.02,
                  IAM_fleet_role=''):
-        self.client = boto3.client('ec2',region_name='us-east-1')
+        self.logger = logging.basicConfig(logging.BASIC_FORMAT)
+        try:
+            self.client = boto3.client('ec2',region_name='us-east-1')
+        except botocore.exceptions.ClientError as err:
+            self.logger.error('Cannot instantiate boto3 client. Have you run `aws configure` ?', err)
+            raise
+
         self.instance_types = instance_types
         self.image_id = image_id
 
@@ -28,7 +34,7 @@ class AWSSpotScaler:
             }
             # Keeps track of spot fleets
             self.spot_fleet_id_map = {
-                instance = None
+                instance: None
             }
             # Keeps track of current capacity
             self.current_cap = {
@@ -38,7 +44,6 @@ class AWSSpotScaler:
         self.min_cap = 1
         self.max_price = max_price
         self.IAM_fleet_role = IAM_fleet_role
-        self.logger = logging.basicConfig(logging.BASIC_FORMAT)
 
     def get_price(self, instance_type):
         """Get the spot price of a specific instance type.
@@ -78,8 +83,8 @@ class AWSSpotScaler:
                         self.modify_spot_fleet(price,
                                            target_capacity=self.min_cap,
                                            spot_fleet_request_id=self.spot_fleet_id_map[instance_type])
-           except botocore.exceptions.BotoCoreError as exp:
-               self.logger.error('Error launching or modifying spot fleet', exp)
+            except botocore.exceptions.BotoCoreError as err:
+                self.logger.error('Error launching or modifying spot fleet', err)
 
         # Check every 10 minutes
         time.sleep(600)
@@ -115,7 +120,6 @@ class AWSSpotScaler:
             response  = client.request_spot_fleet(
                 SpotFleetRequestConfig={
                     'AllocationStrategy': 'lowestPrice',
-                    'FulfilledCapacity':
                     'IamFleetRole': self.IAM_fleet_role,
                     'LaunchSpecifications': [
                         {
