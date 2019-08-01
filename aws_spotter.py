@@ -22,8 +22,11 @@ class AWSSpotter:
     def launch_spot_instances(self):
         price = self.get_price()
         response = self.client.request_spot_instances(
+            DryRun=False,
             SpotPrice = price,
             Type = 'one-time',
+            BlockDurationMinutes=60,
+            InstanceCount=1,
             LaunchSpecification = {
                 'ImageId': self.image_id,
                 'InstanceType': self.instance_type,
