@@ -1,6 +1,8 @@
+import logging
 import time
 
 import boto3
+import botocore
 
 
 class AWSSpotScaler:
@@ -36,6 +38,7 @@ class AWSSpotScaler:
         self.min_cap = 1
         self.max_price = max_price
         self.IAM_fleet_role = IAM_fleet_role
+        self.logger = logging.basicConfig(logging.BASIC_FORMAT)
 
     def get_price(self, instance_type):
         """Get the spot price of a specific instance type.
@@ -54,26 +57,29 @@ class AWSSpotScaler:
         Note: It requests a spot fleet on the very first run.
         """
         while True:
-            for instance_type in self.instance_types:
-                price = self.get_price(instance_type)
-                # If this is the first time it's running, then request the spot fleet
-                if self.spot_fleet_id_map[instance_type] == None:
-                    self.launch_spot_fleet(instance_type)
-                    continue
+            try:
+                for instance_type in self.instance_types:
+                    price = self.get_price(instance_type)
+                    # If this is the first time it's running, then request the spot fleet
+                    if self.spot_fleet_id_map[instance_type] == None:
+                        self.launch_spot_fleet(instance_type)
+                        continue
 
-                # Check if the current price is less than our max price. If so, then increase spot fleet capacity
-                if price < self.max_price and self.current_cap[instance_type] <self.max_cap:
-                    self.current_cap = self.max_cap
-                    self.modify_spot_fleet(price,
-                                           target_capacity=self.max_cap,
+                    # Check if the current price is less than our max price. If so, then increase spot fleet capacity
+                    if price < self.max_price and self.current_cap[instance_type] <self.max_cap:
+                        self.current_cap = self.max_cap
+                        self.modify_spot_fleet(price,
+                                               target_capacity=self.max_cap,
+                                               spot_fleet_request_id=self.spot_fleet_id_map[instance_type])
+
+                    # Else the current price is more than our max price and let's decrease the capacity of the spot instance fleet
+                    else:
+                        self.current_cap = self.min_cap
+                        self.modify_spot_fleet(price,
+                                           target_capacity=self.min_cap,
                                            spot_fleet_request_id=self.spot_fleet_id_map[instance_type])
-
-                # Else the current price is more than our max price and let's decrease the capacity of the spot instance fleet
-                else:
-                    self.current_cap = self.min_cap
-                    self.modify_spot_fleet(price,
-                                       target_capacity=self.min_cap,
-                                       spot_fleet_request_id=self.spot_fleet_id_map[instance_type])
+           except botocore.exceptions.BotoCoreError as exp:
+               self.logger.error('Error launching or modifying spot fleet', exp)
 
         # Check every 10 minutes
         time.sleep(600)
