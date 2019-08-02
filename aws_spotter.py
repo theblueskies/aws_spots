@@ -86,8 +86,8 @@ class AWSSpotScaler:
             except botocore.exceptions.BotoCoreError as err:
                 self.logger.error('Error launching or modifying spot fleet', err)
 
-        # Check every 10 minutes
-        time.sleep(600)
+            # Check every 10 minutes
+            time.sleep(600)
 
     def launch_spot_instances(self):
         """Launches spot instance for a set duration. This cannot be scaled up and down as desired.
